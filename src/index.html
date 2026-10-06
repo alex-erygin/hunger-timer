@@ -57,6 +57,16 @@
   const subLine = document.getElementById("sub-line");
 
   let startTs = Number(localStorage.getItem(LS_KEY)) || null;
+  // timer_finish логируем один раз на цикл, переживает перезапуск приложения
+  let finishLoggedFor = Number(localStorage.getItem("hunger-timer-finish-logged")) || null;
+
+  // Журнал событий (JSONL, %APPDATA%\hunger-timer\events.jsonl) — пишет Rust-сторона.
+  function logEvent(event, data) {
+    try {
+      const t = window.__TAURI__;
+      if (t && t.core && t.core.invoke) t.core.invoke("log_event", { event, data: data || null });
+    } catch (_) { /* журнал не должен ломать виджет */ }
+  }
 
   function fmt(ms) {
     const s = Math.max(0, Math.ceil(ms / 1000));
@@ -76,6 +86,11 @@
     }
     const left = startTs + DURATION_MS - Date.now();
     if (left <= 0) {
+      if (finishLoggedFor !== startTs) {
+        finishLoggedFor = startTs;
+        localStorage.setItem("hunger-timer-finish-logged", String(startTs));
+        logEvent("timer_finish", { started_at: new Date(startTs).toISOString() });
+      }
       widget.classList.add("done");
       icon.textContent = "✅";
       mainLine.textContent = "Можно есть!";
@@ -92,7 +107,13 @@
     if (!startTs) {
       startTs = Date.now();
       localStorage.setItem(LS_KEY, String(startTs));
+      logEvent("timer_start", { duration_ms: DURATION_MS });
     } else {
+      const wasDone = Date.now() >= startTs + DURATION_MS;
+      logEvent("timer_reset", {
+        elapsed_ms: Date.now() - startTs,
+        completed: wasDone,
+      });
       startTs = null;
       localStorage.removeItem(LS_KEY);
     }

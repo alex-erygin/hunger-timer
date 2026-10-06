@@ -159,12 +159,9 @@ mod autostart {
             if enable {
                 if let Ok(exe) = std::env::current_exe() {
                     let path = exe.to_string_lossy();
-                    let wide: Vec<u16> =
-                        path.encode_utf16().chain(std::iter::once(0)).collect();
-                    let bytes: &[u8] = std::slice::from_raw_parts(
-                        wide.as_ptr() as *const u8,
-                        wide.len() * 2,
-                    );
+                    let wide: Vec<u16> = path.encode_utf16().chain(std::iter::once(0)).collect();
+                    let bytes: &[u8] =
+                        std::slice::from_raw_parts(wide.as_ptr() as *const u8, wide.len() * 2);
                     let _ = RegSetValueExW(key, w!("HungerTimer"), Some(0), REG_SZ, Some(bytes));
                 }
             } else {
@@ -175,14 +172,86 @@ mod autostart {
     }
 }
 
+/// Журнал событий для анализа использования + пользовательские настройки.
+/// Формат events.jsonl: {"v": SCHEMA_VERSION, "ts": ISO8601 UTC, "event": "...", ...extra}
+/// Версия схемы v в каждой строке — при смене формата SCHEMA_VERSION инкрементируется,
+/// анализ читает поле v и маршрутизирует парсер.
+mod stats {
+    use std::io::Write;
+    use std::path::PathBuf;
+
+    pub const SCHEMA_VERSION: u32 = 1;
+
+    fn data_dir() -> Option<PathBuf> {
+        std::env::var("APPDATA")
+            .ok()
+            .map(|p| PathBuf::from(p).join("hunger-timer"))
+    }
+
+    pub fn append(event: &str, data: Option<serde_json::Value>) {
+        let Some(dir) = data_dir() else { return };
+        if std::fs::create_dir_all(&dir).is_err() {
+            return;
+        }
+        let ts = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+        let mut obj = serde_json::json!({
+            "v": SCHEMA_VERSION,
+            "ts": ts,
+            "event": event,
+        });
+        if let Some(serde_json::Value::Object(extra)) = data {
+            if let Some(map) = obj.as_object_mut() {
+                for (k, val) in extra {
+                    map.insert(k, val);
+                }
+            }
+        }
+        let path = dir.join("events.jsonl");
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+        {
+            let _ = writeln!(f, "{obj}");
+        }
+    }
+
+    /// Пользователь явно снял галочку автозапуска — не включать его обратно.
+    pub fn autostart_off() -> bool {
+        let Some(dir) = data_dir() else { return false };
+        let Ok(text) = std::fs::read_to_string(dir.join("config.json")) else {
+            return false;
+        };
+        serde_json::from_str::<serde_json::Value>(&text)
+            .ok()
+            .and_then(|v| v.get("autostart_off")?.as_bool())
+            .unwrap_or(false)
+    }
+
+    pub fn set_autostart_off(off: bool) {
+        let Some(dir) = data_dir() else { return };
+        let _ = std::fs::create_dir_all(&dir);
+        let _ = std::fs::write(
+            dir.join("config.json"),
+            serde_json::json!({ "autostart_off": off }).to_string(),
+        );
+    }
+}
+
+/// Tauri-команда для фронта: записать событие в журнал.
+#[tauri::command]
+fn log_event(event: String, data: Option<serde_json::Value>) {
+    stats::append(&event, data);
+}
+
 /// Геометрия панели задач и левый край системного трея (TrayNotifyWnd).
 /// Координаты физические (процесс DPI-aware). Возвращает (x_виджета, y_виджета):
 /// виджет встаёт вплотную слева от трея, по вертикали центрируется в панели.
 #[cfg(windows)]
 fn widget_position_near_tray(win_w: i32, win_h: i32) -> Option<(i32, i32)> {
+    use windows::core::w;
     use windows::Win32::Foundation::{HWND, RECT};
     use windows::Win32::UI::WindowsAndMessaging::{FindWindowExW, FindWindowW, GetWindowRect};
-    use windows::core::w;
 
     unsafe {
         let tray = FindWindowW(w!("Shell_TrayWnd"), None).ok()?;
@@ -213,6 +282,7 @@ fn main() {
     }
 
     tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![log_event])
         // Single-instance guard: повторный запуск не плодит процесс,
         // а показывает и фокусирует уже существующее окно виджета.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -223,6 +293,19 @@ fn main() {
             }
         }))
         .setup(|app| {
+            stats::append(
+                "app_start",
+                Some(serde_json::json!({ "version": env!("CARGO_PKG_VERSION") })),
+            );
+
+            // Автозапуск включён по умолчанию; пишем значение на каждом старте,
+            // чтобы путь не протухал при переходе dev-сборка ↔ установленная копия.
+            // Если пользователь сам снял галочку — не трогаем.
+            #[cfg(windows)]
+            if !stats::autostart_off() {
+                autostart::set(true);
+            }
+
             // Позиционируем виджет на панель задач вплотную слева от системного трея.
             // Fallback — левый нижний угол (место виджета погоды).
             if let Some(win) = app.get_webview_window("main") {
@@ -278,17 +361,19 @@ fn main() {
                 .icon(app.default_window_icon().unwrap().clone())
                 .tooltip("Hunger Timer — 2 часа после голода")
                 .menu(&menu)
-                .on_menu_event(move |app, event| {
-                    match event.id.as_ref() {
-                        "quit" => app.exit(0),
-                        #[cfg(windows)]
-                        "autostart" => {
-                            let new = !autostart::enabled();
-                            autostart::set(new);
-                            let _ = autostart_handle.set_checked(new);
-                        }
-                        _ => {}
+                .on_menu_event(move |app, event| match event.id.as_ref() {
+                    "quit" => {
+                        stats::append("app_exit", None);
+                        app.exit(0);
                     }
+                    #[cfg(windows)]
+                    "autostart" => {
+                        let new = !autostart::enabled();
+                        autostart::set(new);
+                        stats::set_autostart_off(!new);
+                        let _ = autostart_handle.set_checked(new);
+                    }
+                    _ => {}
                 })
                 .build(app)?;
 
