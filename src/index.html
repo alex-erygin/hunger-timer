@@ -35,7 +35,7 @@
   #icon { font-size: 20px; line-height: 1; }
   #text { display: flex; flex-direction: column; }
   #main-line { font-size: 15px; font-weight: 600; color: var(--fg); letter-spacing: 0.5px; }
-  #sub-line  { font-size: 10px; color: rgba(232,234,237,0.55); }
+  #sub-line  { font-size: 10px; color: rgba(232,234,237,0.78); white-space: nowrap; }
   .running #main-line { color: var(--accent); font-variant-numeric: tabular-nums; }
   .done #main-line { color: #ffffff; }
 </style>
@@ -82,7 +82,7 @@
     if (!startTs) {
       icon.textContent = "🍴";
       mainLine.textContent = "Голоден?";
-      subLine.textContent = "нажми — отсчёт 2:00:00";
+      subLine.textContent = "нажми — 2:00:00";
       return;
     }
     const left = startTs + DURATION_MS - Date.now();
@@ -95,7 +95,7 @@
       widget.classList.add("done");
       icon.textContent = "✅";
       mainLine.textContent = "Можно есть!";
-      subLine.textContent = "2 часа прошло — нажми, чтобы сбросить";
+      subLine.textContent = "нажми — сбросить";
       return;
     }
     widget.classList.add("running");
