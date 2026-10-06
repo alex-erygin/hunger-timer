@@ -261,7 +261,9 @@ fn widget_position_near_tray(win_w: i32, win_h: i32) -> Option<(i32, i32)> {
         GetWindowRect(tray, &mut trc).ok()?;
         let mut nrc: RECT = std::mem::zeroed();
         GetWindowRect(notify, &mut nrc).ok()?;
-        let x = nrc.left - win_w - 8;
+        // Зазор 58px: 8px отступ + 50px запас, чтобы не перехватывать клик
+        // по стрелке скрытых значков у системного трея.
+        let x = nrc.left - win_w - 58;
         let y = trc.top + (trc.bottom - trc.top - win_h) / 2;
         Some((x, y))
     }
