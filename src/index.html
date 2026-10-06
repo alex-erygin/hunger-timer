@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<style>
+  :root {
+    --bg-idle: rgba(20, 22, 26, 0.82);
+    --bg-run:  rgba(20, 34, 26, 0.88);
+    --bg-done: rgba(16, 120, 62, 0.95);
+    --fg: #e8eaed;
+    --accent: #00ff9d;
+    --warn: #ffb000;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { background: transparent; overflow: hidden; }
+  body {
+    font-family: "Segoe UI", "JetBrains Mono", system-ui, sans-serif;
+    user-select: none;
+    -webkit-user-select: none;
+    cursor: pointer;
+  }
+  #widget {
+    width: 170px; height: 48px;
+    display: flex; align-items: center; gap: 9px;
+    padding: 0 12px;
+    border-radius: 8px;
+    background: var(--bg-idle);
+    border: 1px solid rgba(255,255,255,0.08);
+    transition: background 0.4s ease;
+  }
+  #widget.running { background: var(--bg-run); border-color: rgba(0,255,157,0.35); }
+  #widget.done    { background: var(--bg-done); border-color: rgba(255,255,255,0.4); }
+
+  #icon { font-size: 20px; line-height: 1; }
+  #text { display: flex; flex-direction: column; }
+  #main-line { font-size: 15px; font-weight: 600; color: var(--fg); letter-spacing: 0.5px; }
+  #sub-line  { font-size: 10px; color: rgba(232,234,237,0.55); }
+  .running #main-line { color: var(--accent); font-variant-numeric: tabular-nums; }
+  .done #main-line { color: #ffffff; }
+</style>
+</head>
+<body>
+<div id="widget" title="Клик — старт/сброс таймера">
+  <div id="icon">🍴</div>
+  <div id="text">
+    <div id="main-line">Голоден?</div>
+    <div id="sub-line">нажми — отсчёт 2:00:00</div>
+  </div>
+</div>
+<script>
+  const DURATION_MS = 2 * 60 * 60 * 1000; // 2 часа
+  const LS_KEY = "hunger-timer-start";
+
+  const widget = document.getElementById("widget");
+  const icon = document.getElementById("icon");
+  const mainLine = document.getElementById("main-line");
+  const subLine = document.getElementById("sub-line");
+
+  let startTs = Number(localStorage.getItem(LS_KEY)) || null;
+
+  function fmt(ms) {
+    const s = Math.max(0, Math.ceil(ms / 1000));
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const ss = s % 60;
+    return `${h}:${String(m).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
+  }
+
+  function render() {
+    widget.classList.remove("running", "done");
+    if (!startTs) {
+      icon.textContent = "🍴";
+      mainLine.textContent = "Голоден?";
+      subLine.textContent = "нажми — отсчёт 2:00:00";
+      return;
+    }
+    const left = startTs + DURATION_MS - Date.now();
+    if (left <= 0) {
+      widget.classList.add("done");
+      icon.textContent = "✅";
+      mainLine.textContent = "Можно есть!";
+      subLine.textContent = "2 часа прошло — нажми, чтобы сбросить";
+      return;
+    }
+    widget.classList.add("running");
+    icon.textContent = "⏳";
+    mainLine.textContent = fmt(left);
+    subLine.textContent = "терпи — ещё рано";
+  }
+
+  widget.addEventListener("click", () => {
+    if (!startTs) {
+      startTs = Date.now();
+      localStorage.setItem(LS_KEY, String(startTs));
+    } else {
+      startTs = null;
+      localStorage.removeItem(LS_KEY);
+    }
+    render();
+  });
+
+  document.addEventListener("contextmenu", e => e.preventDefault());
+  setInterval(render, 500);
+  render();
+</script>
+</body>
+</html>
