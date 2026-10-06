@@ -1,6 +1,6 @@
 [package]
 name = "hunger-timer"
-version = "0.3.0"
+version = "0.3.1"
 description = "Hunger 2-hour timer taskbar widget"
 edition = "2021"
 

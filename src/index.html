@@ -4,9 +4,9 @@
 <meta charset="UTF-8">
 <style>
   :root {
-    --bg-idle: rgba(20, 22, 26, 0.82);
-    --bg-run:  rgba(20, 34, 26, 0.88);
-    --bg-done: rgba(16, 120, 62, 0.95);
+    --bg-idle: rgba(20, 22, 26, 0.10);
+    --bg-run:  rgba(14, 46, 30, 0.45);
+    --bg-done: rgba(16, 120, 62, 0.85);
     --fg: #e8eaed;
     --accent: #00ff9d;
     --warn: #ffb000;
@@ -20,13 +20,14 @@
     cursor: pointer;
   }
   #widget {
-    width: 170px; height: 48px;
+    width: 170px; height: 44px;
     display: flex; align-items: center; gap: 9px;
     padding: 0 12px;
     border-radius: 8px;
     background: var(--bg-idle);
-    border: 1px solid rgba(255,255,255,0.08);
+    border: 1px solid transparent;
     transition: background 0.4s ease;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.7);
   }
   #widget.running { background: var(--bg-run); border-color: rgba(0,255,157,0.35); }
   #widget.done    { background: var(--bg-done); border-color: rgba(255,255,255,0.4); }
